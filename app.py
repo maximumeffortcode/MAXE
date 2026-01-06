@@ -1,15 +1,12 @@
 # app.py — MAXE MVP (Streamlit Cloud)
-# - MAXE image states: IDLE / THINKING (A<->B) / ESCALATION
-# - Visible thinking animation (in-place loop)
+# - MAXE image states: IDLE / THINKING / ESCALATION
+# - CSS animation (Gold idle / White thinking / Red escalation)
 # - Typed text reply (in-place typewriter)
 # - Escalation trigger + email-only coach notification
 #
 # Folder structure expected:
 #   app.py
 #   requirements.txt
-#   notify.py (optional; not used here)
-#   safety.py  (optional; not used here)
-#   typing.py  (optional; not used here)
 #   maxe_assets/
 #       maxe_idle.png
 #       maxe_thinking_a.png
@@ -20,6 +17,8 @@ import os
 import re
 import time
 import smtplib
+import base64
+from pathlib import Path
 from email.message import EmailMessage
 from typing import List, Optional, Dict, Any
 
@@ -30,7 +29,7 @@ import streamlit as st
 # ASSETS
 # ----------------------------
 ASSET_IDLE = "maxe_assets/maxe_idle.png"
-ASSET_THINKING_A = "maxe_assets/maxe_thinking_a.png"
+ASSET_THINKING_A = "maxe_assets/maxe_thinking_a.png"   # You can keep both; we’ll default to A.
 ASSET_THINKING_B = "maxe_assets/maxe_thinking_b.png"
 ASSET_ESCALATION = "maxe_assets/maxe_escalation.png"
 
@@ -125,35 +124,9 @@ def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
 
 
 # ----------------------------
-# UI Helpers: MAXE image + animations
+# Typed reply (typewriter)
 # ----------------------------
-def render_maxe(image_placeholder, state: str, frame: str = "A") -> None:
-    if state == "THINKING":
-        path = ASSET_THINKING_A if frame == "A" else ASSET_THINKING_B
-    elif state == "ESCALATION":
-        path = ASSET_ESCALATION
-    else:
-        path = ASSET_IDLE
-
-    image_placeholder.image(path, use_container_width=True)
-
-def animate_thinking(image_placeholder, seconds: float = 1.4, interval: float = 0.45) -> None:
-    """
-    Visible, blocking animation loop (simple + reliable in Streamlit).
-    Swaps A<->B for a short duration.
-    """
-    end = time.time() + seconds
-    frame = "A"
-    while time.time() < end:
-        render_maxe(image_placeholder, "THINKING", frame=frame)
-        frame = "B" if frame == "A" else "A"
-        time.sleep(interval)
-
 def typewriter_in_chat(chat_placeholder, text: str, speed: float = 0.02, pre_delay: float = 0.35) -> None:
-    """
-    Types text inside a chat message bubble.
-    Uses a placeholder so it updates in place.
-    """
     with chat_placeholder:
         with st.chat_message("assistant"):
             bubble = st.empty()
@@ -171,7 +144,6 @@ def typewriter_in_chat(chat_placeholder, text: str, speed: float = 0.02, pre_del
 # Placeholder MAXE reply (replace later with AI / rules)
 # ----------------------------
 def maxe_reply_for(user_msg: str) -> str:
-    # v1: simple helpful response. Replace with your rule engine / AI later.
     return (
         "Acknowledged.\n\n"
         "If you need a substitution, tell me:\n"
@@ -190,9 +162,94 @@ def maxe_escalation_reply() -> str:
 
 
 # ----------------------------
-# Streamlit App
+# CSS Animation (Gold idle / White thinking / Red escalation)
 # ----------------------------
 st.set_page_config(page_title="MAXE", layout="wide")
+
+st.markdown("""
+<style>
+.maxe-container{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+.maxe-img{
+  width:100%;
+  max-width:420px;
+  border-radius: 10px;
+}
+
+/* IDLE: gold glow + slow breathe */
+.maxe-idle{
+  animation: maxe-breathe 4.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.45));
+}
+
+/* THINKING: white glow + faster pulse */
+.maxe-thinking{
+  animation: maxe-pulse 1.15s ease-in-out infinite;
+  filter: drop-shadow(0 0 14px rgba(245, 242, 234, 0.85));
+}
+
+/* ESCALATION: red glow + urgent pulse */
+.maxe-escalation{
+  animation: maxe-pulse 0.85s ease-in-out infinite;
+  filter: drop-shadow(0 0 16px rgba(210, 45, 45, 0.95));
+}
+
+@keyframes maxe-breathe{
+  0%{ transform:scale(1.0); }
+  50%{ transform:scale(1.015); }
+  100%{ transform:scale(1.0); }
+}
+
+@keyframes maxe-pulse{
+  0%{ transform:scale(1.0); opacity:0.93; }
+  50%{ transform:scale(1.02); opacity:1.0; }
+  100%{ transform:scale(1.0); opacity:0.93; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_data(show_spinner=False)
+def img_to_data_uri(path: str) -> str:
+    data = Path(path).read_bytes()
+    b64 = base64.b64encode(data).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def render_maxe_animated(state: str) -> None:
+    """
+    CSS-animated render. Uses base64 data URI so it works on Streamlit Cloud.
+    We use one static image per state; the 'animation' is CSS-based.
+    """
+    if state == "THINKING":
+        # Use one thinking image; the white glow CSS will signal thinking.
+        img_path = ASSET_THINKING_A
+        css_class = "maxe-thinking"
+    elif state == "ESCALATION":
+        img_path = ASSET_ESCALATION
+        css_class = "maxe-escalation"
+    else:
+        img_path = ASSET_IDLE
+        css_class = "maxe-idle"
+
+    uri = img_to_data_uri(img_path)
+    st.markdown(
+        f"""
+        <div class="maxe-container">
+          <img class="maxe-img {css_class}" src="{uri}" />
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# ----------------------------
+# Streamlit App
+# ----------------------------
 
 # Session state init
 if "messages" not in st.session_state:
@@ -202,10 +259,8 @@ left, right = st.columns([1, 2], gap="large")
 
 with left:
     st.markdown("## MAXE")
-    maxe_img = st.empty()
-    # Default render (idle)
-    render_maxe(maxe_img, "IDLE")
-    status_line = st.caption("Status: IDLE")
+    status_slot = st.empty()
+    maxe_slot = st.container()
 
 with right:
     st.markdown("## Chat")
@@ -217,51 +272,70 @@ with right:
 
     user_msg = st.chat_input("Message MAXE…")
 
-    if user_msg:
-        # 1) Show user message immediately
-        st.session_state.messages.append({"role": "user", "content": user_msg})
-        with st.chat_message("user"):
-            st.markdown(user_msg)
+# Default state
+current_state = "IDLE"
 
-        # 2) Escalation check
-        escalate, reasons = check_escalation(user_msg)
+# Process message if provided
+if user_msg:
+    # 1) Save & show user message
+    st.session_state.messages.append({"role": "user", "content": user_msg})
 
-        if escalate:
-            # Show escalation visuals
-            render_maxe(maxe_img, "ESCALATION")
-            status_line.caption("Status: ESCALATION")
+    # 2) Escalation check
+    escalate, reasons = check_escalation(user_msg)
+
+    if escalate:
+        current_state = "ESCALATION"
+        with left:
+            status_slot.caption("Status: ESCALATION")
+            with maxe_slot:
+                render_maxe_animated(current_state)
+        with right:
             st.error("COACH NOTIFIED")
 
-            # Notify coach (best effort)
-            try:
-                send_coach_email(
-                    subject="MAXE Escalation Alert",
-                    body=f"User message:\n\n{user_msg}\n\nContext:\n- App: MAXE\n- State: ESCALATION\n",
-                    reasons=reasons
-                )
-            except Exception as e:
-                # Still escalate visually even if email isn't configured
+        # Notify coach (best effort)
+        try:
+            send_coach_email(
+                subject="MAXE Escalation Alert",
+                body=f"User message:\n\n{user_msg}\n\nContext:\n- App: MAXE\n- State: ESCALATION\n",
+                reasons=reasons
+            )
+        except Exception as e:
+            with right:
                 st.warning(f"Coach email not sent (check Streamlit secrets): {e}")
 
-            # Reply (typed)
-            reply = maxe_escalation_reply()
-            # Save to history AFTER typing so it matches what user saw
-            chat_placeholder = st.empty()
-            typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
-            st.session_state.messages.append({"role": "assistant", "content": reply})
+        # Reply (typed)
+        reply = maxe_escalation_reply()
+        chat_placeholder = st.empty()
+        typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
+        st.session_state.messages.append({"role": "assistant", "content": reply})
 
-        else:
-            # 3) Thinking animation (visible)
-            status_line.caption("Status: THINKING")
-            animate_thinking(maxe_img, seconds=1.35, interval=0.45)
+    else:
+        # THINKING phase (CSS pulse shows immediately)
+        current_state = "THINKING"
+        with left:
+            status_slot.caption("Status: THINKING")
+            with maxe_slot:
+                render_maxe_animated(current_state)
 
-            # 4) Respond (typed)
-            render_maxe(maxe_img, "IDLE")
-            status_line.caption("Status: RESPONDING")
+        # Small pause so user actually sees the state change
+        time.sleep(0.8)
 
-            reply = maxe_reply_for(user_msg)
-            chat_placeholder = st.empty()
-            typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
-            st.session_state.messages.append({"role": "assistant", "content": reply})
+        # RESPOND (typed). We keep CSS animation simple; switch to IDLE while typing if you want.
+        reply = maxe_reply_for(user_msg)
+        with left:
+            status_slot.caption("Status: RESPONDING")
+            with maxe_slot:
+                render_maxe_animated("IDLE")
 
-            status_line.caption("Status: IDLE")
+        chat_placeholder = st.empty()
+        typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+
+        current_state = "IDLE"
+
+# Render MAXE (for initial load or after processing)
+with left:
+    if not user_msg:
+        status_slot.caption("Status: IDLE")
+    with maxe_slot:
+        render_maxe_animated(current_state)
