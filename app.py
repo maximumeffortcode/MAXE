@@ -270,8 +270,6 @@ if "pending" not in st.session_state:
 
 if "pending_user_msg" not in st.session_state:
     st.session_state.pending_user_msg = ""
-
-
 # ----------------------------
 # Layout
 # ----------------------------
@@ -285,68 +283,63 @@ with left:
 with right:
     st.markdown("## Chat")
 
-    # Render chat history
+    # 1) Render chat history FIRST
     for m in st.session_state.messages:
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
-    user_msg = st.chat_input("Message MAXE…")
+    # 2) If we have a pending response, PROCESS IT HERE (BEFORE chat_input)
+    if st.session_state.pending:
+        msg = st.session_state.pending_user_msg
 
+        # Let the user see THINKING for a moment
+        time.sleep(0.8)
 
-# ----------------------------
-# Phase 1: user submits -> queue THINKING -> rerun
-# ----------------------------
-if user_msg:
-    st.session_state.messages.append({"role": "user", "content": user_msg})
+        escalate, reasons = check_escalation(msg)
 
-    st.session_state.pending = True
-    st.session_state.pending_user_msg = user_msg
-    st.session_state.maxe_state = "THINKING"
-
-    st.rerun()
-
-
-# ----------------------------
-# Phase 2: pending -> process response on next run
-# ----------------------------
-if st.session_state.pending:
-    msg = st.session_state.pending_user_msg
-
-    # Let the user see THINKING for a moment
-    time.sleep(0.8)
-
-    escalate, reasons = check_escalation(msg)
-
-    if escalate:
-        st.session_state.maxe_state = "ESCALATION"
-        with right:
+        if escalate:
+            st.session_state.maxe_state = "ESCALATION"
             st.error("COACH NOTIFIED")
 
-        try:
-            send_coach_email(
-                subject="MAXE Escalation Alert",
-                body=f"User message:\n\n{msg}\n\nContext:\n- App: MAXE\n- State: ESCALATION\n",
-                reasons=reasons
-            )
-        except Exception as e:
-            with right:
+            try:
+                send_coach_email(
+                    subject="MAXE Escalation Alert",
+                    body=f"User message:\n\n{msg}\n\nContext:\n- App: MAXE\n- State: ESCALATION\n",
+                    reasons=reasons
+                )
+            except Exception as e:
                 st.warning(f"Coach email not sent (check Streamlit secrets): {e}")
 
-        reply = maxe_escalation_reply()
+            reply = maxe_escalation_reply()
+        else:
+            st.session_state.maxe_state = "RESPONDING"
+            reply = maxe_reply_for(msg)
 
-    else:
-        st.session_state.maxe_state = "RESPONDING"
-        reply = maxe_reply_for(msg)
-
-    with right:
+        # Type reply (this will now appear ABOVE the input box)
         chat_placeholder = st.empty()
         typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
 
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    
-    st.session_state.pending = False
-    st.session_state.pending_user_msg = ""
-    st.session_state.maxe_state = "IDLE"
+        # Save assistant reply
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+
+        # Clear pending + reset state
+        st.session_state.pending = False
+        st.session_state.pending_user_msg = ""
+        st.session_state.maxe_state = "IDLE"
+
+        # OPTIONAL: rerun so the typed placeholder becomes "real" history immediately
+        st.rerun()
+
+    # 3) chat_input LAST (always at bottom)
+    user_msg = st.chat_input("Message MAXE…")
+
+    # Phase 1: user submits -> queue THINKING -> rerun
+    if user_msg:
+        st.session_state.messages.append({"role": "user", "content": user_msg})
+        st.session_state.pending = True
+        st.session_state.pending_user_msg = user_msg
+        st.session_state.maxe_state = "THINKING"
+        st.rerun()
 
 
 # ----------------------------
@@ -356,3 +349,5 @@ with left:
     status_slot.caption(f"Status: {st.session_state.maxe_state}")
     with maxe_slot.container():
         render_maxe_animated(st.session_state.maxe_state)
+
+
