@@ -325,6 +325,5 @@ if user_msg:
 # ✅ Render MAXE ONCE per run (always)
 with left:
     status_slot.caption(f"Status: {st.session_state.maxe_state}")
-    maxe_slot.empty()
-    with maxe_slot:
+    maxe_slot.container():
         render_maxe_animated(st.session_state.maxe_state)
