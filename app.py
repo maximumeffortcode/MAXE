@@ -283,6 +283,10 @@ if user_msg:
 
     # Set THINKING immediately so user sees the animation/glow
     st.session_state.maxe_state = "THINKING"
+    with left:
+        status_slot_caption(f"Status: {st.session_state.maxe_state}")
+        with maxe_slot.container():
+            render_maxe_animated(st.session_state.maxe_state)
     time.sleep(0.8)
 
     # Escalation check
