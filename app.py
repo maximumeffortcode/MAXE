@@ -257,10 +257,14 @@ if "messages" not in st.session_state:
 
 left, right = st.columns([1, 2], gap="large")
 
+# Default state
+if "maxe_state" not in st.session_state:
+    st.session_state.maxe_state = "IDLE"
+
 with left:
     st.markdown("## MAXE")
     status_slot = st.empty()
-    maxe_slot = st.container()
+    maxe_slot = st.empty()  # <-- IMPORTANT: use empty, not container
 
 with right:
     st.markdown("## Chat")
@@ -272,24 +276,21 @@ with right:
 
     user_msg = st.chat_input("Message MAXE…")
 
-# Default state
-if "maxe_state" not in st.session_state:
-    st.session_state.maxe_state = "IDLE"
-
 # Process message if provided
 if user_msg:
-    # 1) Save & show user message
+    # Save user message
     st.session_state.messages.append({"role": "user", "content": user_msg})
 
-    # 2) Escalation check
+    # Set THINKING immediately so user sees the animation/glow
+    st.session_state.maxe_state = "THINKING"
+    time.sleep(0.8)
+
+    # Escalation check
     escalate, reasons = check_escalation(user_msg)
 
     if escalate:
-        current_state = "ESCALATION"
-        with left:
-            status_slot.caption("Status: ESCALATION")
-            with maxe_slot:
-                st.session_state.maxe_state = "ESCALATION"
+        st.session_state.maxe_state = "ESCALATION"
+
         with right:
             st.error("COACH NOTIFIED")
 
@@ -311,32 +312,19 @@ if user_msg:
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
     else:
-        # THINKING phase (CSS pulse shows immediately)
-        current_state = "THINKING"
-        with left:
-            status_slot.caption("Status: THINKING")
-            with maxe_slot:
-                st.session_state.maxe_state = "THINKING"
-
-        # Small pause so user actually sees the state change
-        time.sleep(0.8)
-
-        # RESPOND (typed). We keep CSS animation simple; switch to IDLE while typing if you want.
+        # Normal response
+        st.session_state.maxe_state = "RESPONDING"
         reply = maxe_reply_for(user_msg)
-        with left:
-            status_slot.caption("Status: RESPONDING")
-            with maxe_slot:
-                st.sesssion_state.maxe_state = "IDLE"
 
         chat_placeholder = st.empty()
         typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
-        current_state = "IDLE"
+        st.session_state.maxe_state = "IDLE"
 
-# Render MAXE (for initial load or after processing)
+# ✅ Render MAXE ONCE per run (always)
 with left:
     status_slot.caption(f"Status: {st.session_state.maxe_state}")
+    maxe_slot.empty()
     with maxe_slot:
         render_maxe_animated(st.session_state.maxe_state)
-
