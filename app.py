@@ -338,10 +338,12 @@ if st.session_state.pending:
         st.session_state.maxe_state = "RESPONDING"
         reply = maxe_reply_for(msg)
 
-    chat_placeholder = st.empty()
-    typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+    with right:
+        chat_placeholder = st.empty()
+        typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
 
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    
     st.session_state.pending = False
     st.session_state.pending_user_msg = ""
     st.session_state.maxe_state = "IDLE"
