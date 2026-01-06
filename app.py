@@ -1,31 +1,34 @@
-# app.py
-# MAXE MVP (Web / Streamlit)
-# Features:
-# - MAXE mascot panel (IDLE / THINKING pulse / ESCALATION)
-# - Thinking animation: swaps THINKING_A <-> THINKING_B every 450ms (via autorefresh)
-# - Chat history (persistent in session)
-# - Typed-text “talking” effect
-# - Escalation detection + email-only coach notification
+# app.py — MAXE MVP (Streamlit Cloud)
+# - MAXE image states: IDLE / THINKING (A<->B) / ESCALATION
+# - Visible thinking animation (in-place loop)
+# - Typed text reply (in-place typewriter)
+# - Escalation trigger + email-only coach notification
+#
+# Folder structure expected:
+#   app.py
+#   requirements.txt
+#   notify.py (optional; not used here)
+#   safety.py  (optional; not used here)
+#   typing.py  (optional; not used here)
+#   maxe_assets/
+#       maxe_idle.png
+#       maxe_thinking_a.png
+#       maxe_thinking_b.png
+#       maxe_escalation.png
 
 import os
 import re
 import time
 import smtplib
 from email.message import EmailMessage
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
+
 
 # ----------------------------
-# CONFIG / ASSETS
+# ASSETS
 # ----------------------------
-
-# Put your images in:
-#   maxe_assets/maxe_idle.png
-#   maxe_assets/maxe_thinking_a.png
-#   maxe_assets/maxe_thinking_b.png
-#   maxe_assets/maxe_escalation.png
 ASSET_IDLE = "maxe_assets/maxe_idle.png"
 ASSET_THINKING_A = "maxe_assets/maxe_thinking_a.png"
 ASSET_THINKING_B = "maxe_assets/maxe_thinking_b.png"
@@ -33,31 +36,18 @@ ASSET_ESCALATION = "maxe_assets/maxe_escalation.png"
 
 
 # ----------------------------
-# SECRETS HELPERS (Streamlit Cloud or Env Vars)
+# SECRETS / ENV helper
 # ----------------------------
-
 def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
-    """Try Streamlit secrets first, then env vars."""
     if hasattr(st, "secrets") and key in st.secrets:
         return str(st.secrets[key])
     return os.getenv(key, default)
 
 
 # ----------------------------
-# EMAIL NOTIFY (Email-only MVP)
+# EMAIL (Email-only MVP)
 # ----------------------------
-
 def send_coach_email(subject: str, body: str, reasons: List[str]) -> None:
-    """
-    Sends escalation email using SMTP.
-    Required secrets/env:
-      COACH_EMAIL
-      SMTP_HOST
-      SMTP_PORT (optional; default 587)
-      SMTP_USER
-      SMTP_PASS
-      SMTP_FROM (optional; default SMTP_USER)
-    """
     to_email = get_secret("COACH_EMAIL")
     smtp_host = get_secret("SMTP_HOST")
     smtp_port = int(get_secret("SMTP_PORT", "587"))
@@ -89,34 +79,29 @@ def send_coach_email(subject: str, body: str, reasons: List[str]) -> None:
 
 
 # ----------------------------
-# ESCALATION LOGIC (MVP)
+# ESCALATION (MVP)
 # ----------------------------
-
-def contains_any(text: str, patterns: List[str]) -> bool:
+def _contains_any(text: str, patterns: List[str]) -> bool:
     return any(re.search(p, text, flags=re.IGNORECASE) for p in patterns)
 
 def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
-    """
-    Returns (escalate, reasons).
-    Keyword/regex MVP: fast, effective, tune later.
-    """
     t = user_msg.strip()
     reasons: List[str] = []
 
     medical_red_flags = [
         r"\bchest pain\b|\bchest pressure\b",
         r"\bfaint(ed|ing)?\b|\bpassed out\b|\bblack(ed)? out\b",
-        r"\b(can't|cannot) breathe\b|\bshort(ness)? of breath\b|\bsevere shortness of breath\b",
+        r"\b(can't|cannot) breathe\b|\bsevere shortness of breath\b|\bshort(ness)? of breath\b",
         r"\bnumb(ness)?\b|\btingl(e|ing)\b|\bweak(ness)?\b|\bface droop\b|\bconfus(ed|ion)\b",
-        r"\bpalpitation(s)?\b|\bheart flutter\b|\birregular heartbeat\b",
+        r"\bpalpitation(s)?\b|\birregular heartbeat\b|\bheart flutter\b",
         r"\baorta\b|\baneurysm\b",
         r"\bblood pressure\b.*\b(high|spike|spiking)\b",
     ]
 
     injury_red_flags = [
         r"\bsharp pain\b",
-        r"\bpop(ped)?\b.*\bpain\b|\bheard a pop\b",
-        r"\bswelling\b|\bbruise\b|\bbruising\b",
+        r"\bheard a pop\b|\bpop(ped)?\b.*\bpain\b",
+        r"\bswelling\b|\bbruis(e|ing)\b",
         r"\b(can't|cannot) bear weight\b|\bcan't walk\b",
         r"\bshoot(ing)? pain\b|\bpain down (my|the) (arm|leg)\b",
         r"\bunstable\b|\bgiving out\b|\blocks up\b",
@@ -129,99 +114,103 @@ def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
         r"\bwhat did you mean\b|\bwhat do you want me to do\b",
     ]
 
-    if contains_any(t, medical_red_flags):
+    if _contains_any(t, medical_red_flags):
         reasons.append("medical_red_flag")
-    if contains_any(t, injury_red_flags):
+    if _contains_any(t, injury_red_flags):
         reasons.append("injury_red_flag")
-    if contains_any(t, requires_coach):
+    if _contains_any(t, requires_coach):
         reasons.append("requires_coach_judgment")
 
     return (len(reasons) > 0, reasons)
 
 
 # ----------------------------
-# TYPED TEXT (MAXE “talking” illusion)
+# UI Helpers: MAXE image + animations
 # ----------------------------
+def render_maxe(image_placeholder, state: str, frame: str = "A") -> None:
+    if state == "THINKING":
+        path = ASSET_THINKING_A if frame == "A" else ASSET_THINKING_B
+    elif state == "ESCALATION":
+        path = ASSET_ESCALATION
+    else:
+        path = ASSET_IDLE
 
-def type_text(text: str, container, typing_speed: float = 0.035, pre_delay: float = 0.7) -> None:
+    image_placeholder.image(path, use_container_width=True)
+
+def animate_thinking(image_placeholder, seconds: float = 1.4, interval: float = 0.45) -> None:
     """
-    Types text into a Streamlit placeholder.
-    NOTE: This blocks briefly, which is fine for MVP.
+    Visible, blocking animation loop (simple + reliable in Streamlit).
+    Swaps A<->B for a short duration.
     """
-    container.markdown("…")
-    time.sleep(pre_delay)
+    end = time.time() + seconds
+    frame = "A"
+    while time.time() < end:
+        render_maxe(image_placeholder, "THINKING", frame=frame)
+        frame = "B" if frame == "A" else "A"
+        time.sleep(interval)
 
-    typed = ""
-    for ch in text:
-        typed += ch
-        container.markdown(typed)
-        time.sleep(typing_speed)
+def typewriter_in_chat(chat_placeholder, text: str, speed: float = 0.02, pre_delay: float = 0.35) -> None:
+    """
+    Types text inside a chat message bubble.
+    Uses a placeholder so it updates in place.
+    """
+    with chat_placeholder:
+        with st.chat_message("assistant"):
+            bubble = st.empty()
+            bubble.markdown("…")
+            time.sleep(pre_delay)
 
-
-# ----------------------------
-# MAXE STATE MACHINE
-# ----------------------------
-
-STATE_IDLE = "IDLE"
-STATE_THINKING = "THINKING"
-STATE_ESCALATION = "ESCALATION"
-
-def init_session_state():
-    if "maxe_state" not in st.session_state:
-        st.session_state.maxe_state = STATE_IDLE
-    if "thinking_frame" not in st.session_state:
-        st.session_state.thinking_frame = "A"  # toggles A/B
-    if "messages" not in st.session_state:
-        st.session_state.messages = []  # list[dict]: {role: "user"/"assistant", content: str}
-    if "last_user_msg" not in st.session_state:
-        st.session_state.last_user_msg = ""
-    if "escalation_banner" not in st.session_state:
-        st.session_state.escalation_banner = False
-
-def current_maxe_image_path() -> str:
-    if st.session_state.maxe_state == STATE_THINKING:
-        return ASSET_THINKING_A if st.session_state.thinking_frame == "A" else ASSET_THINKING_B
-    if st.session_state.maxe_state == STATE_ESCALATION:
-        return ASSET_ESCALATION
-    return ASSET_IDLE
+            typed = ""
+            for ch in text:
+                typed += ch
+                bubble.markdown(typed)
+                time.sleep(speed)
 
 
 # ----------------------------
-# UI
+# Placeholder MAXE reply (replace later with AI / rules)
 # ----------------------------
+def maxe_reply_for(user_msg: str) -> str:
+    # v1: simple helpful response. Replace with your rule engine / AI later.
+    return (
+        "Acknowledged.\n\n"
+        "If you need a substitution, tell me:\n"
+        "- what exercise you’re replacing\n"
+        "- available equipment\n"
+        "- what feels limited (pain vs tightness vs fatigue)\n\n"
+        "I will preserve the intent and keep risk low."
+    )
 
+def maxe_escalation_reply() -> str:
+    return (
+        "Coach notified.\n\n"
+        "Stop the session if symptoms worsen.\n"
+        "If you have chest pain, fainting, or severe shortness of breath, seek urgent medical care."
+    )
+
+
+# ----------------------------
+# Streamlit App
+# ----------------------------
 st.set_page_config(page_title="MAXE", layout="wide")
 
-init_session_state()
-
-# Auto-refresh ONLY while thinking so the eyes pulse (no constant reruns)
-if st.session_state.maxe_state == STATE_THINKING:
-    st_autorefresh(interval=450, key="maxe_thinking_refresh")
-    st.session_state.thinking_frame = "B" if st.session_state.thinking_frame == "A" else "A"
+# Session state init
+if "messages" not in st.session_state:
+    st.session_state.messages: List[Dict[str, Any]] = []
 
 left, right = st.columns([1, 2], gap="large")
 
 with left:
     st.markdown("## MAXE")
-    st.image(current_maxe_image_path(), use_container_width=True)
-
-    # Optional status line
-    if st.session_state.maxe_state == STATE_THINKING:
-        st.caption("Status: THINKING")
-    elif st.session_state.maxe_state == STATE_ESCALATION:
-        st.caption("Status: ESCALATION")
-    else:
-        st.caption("Status: IDLE")
+    maxe_img = st.empty()
+    # Default render (idle)
+    render_maxe(maxe_img, "IDLE")
+    status_line = st.caption("Status: IDLE")
 
 with right:
     st.markdown("## Chat")
 
-    if st.session_state.escalation_banner:
-        st.error("COACH NOTIFIED")
-        # Keep it visible once triggered for the session; comment next line if you want it to persist.
-        st.session_state.escalation_banner = False
-
-    # Render chat history
+    # Render message history
     for m in st.session_state.messages:
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
@@ -229,72 +218,50 @@ with right:
     user_msg = st.chat_input("Message MAXE…")
 
     if user_msg:
-        # Save user msg
+        # 1) Show user message immediately
         st.session_state.messages.append({"role": "user", "content": user_msg})
-        st.session_state.last_user_msg = user_msg
+        with st.chat_message("user"):
+            st.markdown(user_msg)
 
-        # Escalation check
+        # 2) Escalation check
         escalate, reasons = check_escalation(user_msg)
 
         if escalate:
-            # 1) Escalate state + banner
-            st.session_state.maxe_state = STATE_ESCALATION
-            st.session_state.escalation_banner = True
+            # Show escalation visuals
+            render_maxe(maxe_img, "ESCALATION")
+            status_line.caption("Status: ESCALATION")
+            st.error("COACH NOTIFIED")
 
-            # 2) Notify coach via email (best-effort)
+            # Notify coach (best effort)
             try:
                 send_coach_email(
                     subject="MAXE Escalation Alert",
-                    body=(
-                        f"User message:\n\n{user_msg}\n\n"
-                        f"Context:\n- App: MAXE\n- State: ESCALATION\n"
-                    ),
+                    body=f"User message:\n\n{user_msg}\n\nContext:\n- App: MAXE\n- State: ESCALATION\n",
                     reasons=reasons
                 )
             except Exception as e:
-                # We still escalate visually even if email isn't configured yet
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": f"Coach notification failed (email config missing): `{e}`"
-                })
+                # Still escalate visually even if email isn't configured
+                st.warning(f"Coach email not sent (check Streamlit secrets): {e}")
 
-            # 3) Safe MAXE reply
-            escalation_reply = (
-                "Coach notified.\n\n"
-                "Stop the session if symptoms worsen.\n"
-                "If you have chest pain, fainting, or severe shortness of breath, seek urgent medical care."
-            )
-            st.session_state.messages.append({"role": "assistant", "content": escalation_reply})
+            # Reply (typed)
+            reply = maxe_escalation_reply()
+            # Save to history AFTER typing so it matches what user saw
+            chat_placeholder = st.empty()
+            typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
+            st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # Rerun to show new state + banner + chat
-            st.rerun()
+        else:
+            # 3) Thinking animation (visible)
+            status_line.caption("Status: THINKING")
+            animate_thinking(maxe_img, seconds=1.35, interval=0.45)
 
-        # NORMAL FLOW
-        st.session_state.maxe_state = STATE_THINKING
-        st.session_state.thinking_frame = "A"
-        st.rerun()
+            # 4) Respond (typed)
+            render_maxe(maxe_img, "IDLE")
+            status_line.caption("Status: RESPONDING")
 
+            reply = maxe_reply_for(user_msg)
+            chat_placeholder = st.empty()
+            typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
+            st.session_state.messages.append({"role": "assistant", "content": reply})
 
-# ----------------------------
-# AFTER RERUN: If we are in THINKING, generate response once and type it out.
-# We do it here so the UI has already switched to THINKING before typing begins.
-# ----------------------------
-if st.session_state.maxe_state == STATE_THINKING and st.session_state.last_user_msg:
-    # IMPORTANT: stop thinking animation before typing so only one illusion runs at a time
-    st.session_state.maxe_state = STATE_IDLE
-    msg = st.session_state.last_user_msg
-    st.session_state.last_user_msg = ""  # consume it so we don't respond twice
-
-    # TODO: Replace this with your real AI call later.
-    # For now, a deterministic “MAXE-style” placeholder response:
-    maxe_reply = (
-        "Acknowledged.\n"
-        "If you need a substitution, tell me your available equipment and what feels limited.\n"
-        "I will preserve the intent and keep risk low."
-    )
-
-    # Add assistant message first (empty), then type into it visually
-    st.session_state.messages.append({"role": "assistant", "content": maxe_reply})
-
-    # Re-render page so typed text happens in-place
-    st.rerun()
+            status_line.caption("Status: IDLE")
