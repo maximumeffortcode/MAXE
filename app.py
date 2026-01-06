@@ -273,7 +273,8 @@ with right:
     user_msg = st.chat_input("Message MAXE…")
 
 # Default state
-current_state = "IDLE"
+if "maxe_state" not in st.session_state:
+    st.session_state.maxe_state = "IDLE"
 
 # Process message if provided
 if user_msg:
@@ -288,7 +289,7 @@ if user_msg:
         with left:
             status_slot.caption("Status: ESCALATION")
             with maxe_slot:
-                render_maxe_animated(current_state)
+                st.session_state.maxe_state = "ESCALATION"
         with right:
             st.error("COACH NOTIFIED")
 
@@ -315,7 +316,7 @@ if user_msg:
         with left:
             status_slot.caption("Status: THINKING")
             with maxe_slot:
-                render_maxe_animated(current_state)
+                st.session_state.maxe_state = "THINKING"
 
         # Small pause so user actually sees the state change
         time.sleep(0.8)
@@ -325,7 +326,7 @@ if user_msg:
         with left:
             status_slot.caption("Status: RESPONDING")
             with maxe_slot:
-                render_maxe_animated("IDLE")
+                st.sesssion_state.maxe_state = "IDLE"
 
         chat_placeholder = st.empty()
         typewriter_in_chat(chat_placeholder, reply, speed=0.02, pre_delay=0.35)
@@ -335,7 +336,7 @@ if user_msg:
 
 # Render MAXE (for initial load or after processing)
 with left:
-    if not user_msg:
-        status_slot.caption("Status: IDLE")
+    status_slot.caption(f"Status: {st.session_state.maxe_state}")
     with maxe_slot:
-        render_maxe_animated(current_state)
+        render_maxe_animated(st.session_state.maxe_state)
+
