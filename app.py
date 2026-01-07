@@ -126,8 +126,15 @@ def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
 
 # ----------------------------
 # Typewriter reply
-# ----------------------------
-def typewriter_in_chat(chat_placeholder, reply, speed=0.006, pre_delay=0.1):
+# ----------------------------####################################################################################################################
+
+
+def typewriter_in_chat(chat_placeholder, text: str, speed: float = 0.02, pre_delay: float = 0.35) -> None:
+    
+    if text is None:
+        text = ""
+    text = str(text)
+
     with chat_placeholder:
         with st.chat_message("assistant"):
             bubble = st.empty()
@@ -139,7 +146,6 @@ def typewriter_in_chat(chat_placeholder, reply, speed=0.006, pre_delay=0.1):
                 typed += ch
                 bubble.markdown(typed)
                 time.sleep(speed)
-
 
 # ----------------------------
 # Placeholder MAXE replies (swap later with AI / rules)
