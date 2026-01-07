@@ -46,6 +46,33 @@ def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
         return str(st.secrets[key])
     return os.getenv(key, default)
 
+#CSS
+st.markdown("""
+<style>
+.maxe-hero {
+    border-radius: 16px;
+    transition: box-shadow 0.4s ease, transform 0.4s ease;
+}
+
+.maxe-idle {
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+}
+
+.maxe-thinking {
+    box-shadow:
+        0 0 25px rgba(212, 175, 55, 0.35),
+        0 0 60px rgba(212, 175, 55, 0.25);
+}
+
+.maxe-escalation {
+    box-shadow:
+        0 0 25px rgba(255, 60, 60, 0.5),
+        0 0 70px rgba(255, 60, 60, 0.4);
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ----------------------------
 # EMAIL (Email-only MVP)
 # ----------------------------
@@ -158,8 +185,22 @@ def avatar_path_for_state(state: str, frame: str = "A") -> str:
     # same as hero (kept separate in case you later want different crops)
     return hero_path_for_state(state, frame)
 
-def render_hero(hero_placeholder, state: str, frame: str = "A") -> None:
-    hero_placeholder.image(hero_path_for_state(state, frame), width=HERO_WIDTH)
+def render_hero(image_path: str, state: str):
+    cls = {
+        "IDLE": "maxe-idle",
+        "THINKING": "maxe-thinking",
+        "ESCALATION": "maxe-escalation"
+    }.get(state, "maxe-idle")
+
+    st.markdown(
+        f"""
+        <div style="display:flex; justify-content:center;">
+            <img src="{image_path}" class="maxe-hero {cls}" width="320"/>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 def avatar_row(avatar_path: str, content_md: str, placeholder=None):
     def _render():
@@ -212,6 +253,20 @@ with hero_center:
 
 
 # Render history
+def avatar_row(avatar_path: str, content_md: str, placeholder=None):
+    def _render():
+        col_img, col_text = st.columns([0.12, 0.88], vertical_alignment="top")
+        with col_img:
+            st.image(avatar_path, width=56)
+        with col_text:
+            st.markdown(content_md)
+
+    if placeholder:
+        with placeholder:
+            _render()
+    else:
+        _render()
+
 for m in st.session_state.messages:
     if m["role"] == "user":
         with st.chat_message("user"):
