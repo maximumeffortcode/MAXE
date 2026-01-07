@@ -161,19 +161,20 @@ def avatar_path_for_state(state: str, frame: str = "A") -> str:
 def render_hero(hero_placeholder, state: str, frame: str = "A") -> None:
     hero_placeholder.image(hero_path_for_state(state, frame), width=HERO_WIDTH)
 
-def avatar_row(avatar_path: str, content_md: str, placeholder=None) -> None:
+def avatar_row(avatar_path: str, content_md: str, placeholder=None):
     def _render():
-        c1, c2 = st.columns([0.13, 0.87], vertical_alignment="top")
-        with c1:
-            st.image(avatar_path, width=AVATAR_SIZE)
-        with c2:
+        col_img, col_text = st.columns([0.12, 0.88], vertical_alignment="top")
+        with col_img:
+            st.image(avatar_path, width=56)
+        with col_text:
             st.markdown(content_md)
 
-    if placeholder is None:
-        _render()
-    else:
+    if placeholder:
         with placeholder:
             _render()
+    else:
+        _render()
+
 
 def animate_thinking(hero_placeholder, bubble_placeholder) -> None:
     end = time.time() + THINK_SECONDS
@@ -200,11 +201,15 @@ if "hero_state" not in st.session_state:
 
 # Top HERO area (single placeholder; never duplicate)
 st.title("MAXE")
-hero_slot = st.empty()
-status_slot = st.caption(f"Status: {st.session_state.hero_state}")
-render_hero(hero_slot, st.session_state.hero_state)
 
-st.divider()
+# Centered hero using columns
+hero_left, hero_center, hero_right = st.columns([1, 2, 1])
+
+with hero_center:
+    hero_slot = st.empty()
+    status_slot = st.caption(f"Status: {st.session_state.hero_state}")
+    render_hero(hero_slot, st.session_state.hero_state)
+
 
 # Render history
 for m in st.session_state.messages:
@@ -213,7 +218,8 @@ for m in st.session_state.messages:
             st.markdown(m["content"])
     else:
         with st.chat_message("assistant"):
-            avatar_row(ASSET_IDLE, m["content"])
+            avatar_row(ASSET_IDLE, reply)
+
 
 # Input
 user_msg = st.chat_input("Message MAXE…")
