@@ -132,11 +132,6 @@ def assistant_reply(reply: str, delay: float = 0.5) -> None:
         time.sleep(delay)
         slot.markdown(reply)
 
-assistant_reply(reply, delay=0.5)
-st.session_state.messages.append({"role": "assistant", "content": reply})
-
-
-
 # ----------------------------
 # Placeholder MAXE replies (swap later with AI / rules)
 # ----------------------------
@@ -223,33 +218,17 @@ def img_to_data_uri(path: str) -> str:
     return f"data:image/png;base64,{b64}"
 
 
-def render_maxe_animated(state: str) -> None:
-    """
-    CSS-animated render. Uses base64 data URI so it works on Streamlit Cloud.
-    We show one static image per state; 'animation' is CSS-based.
-    """
-    if state == "THINKING":
-        img_path = ASSET_THINKING_A
-        css_class = "maxe-thinking"
-    elif state == "ESCALATION":
-        img_path = ASSET_ESCALATION
-        css_class = "maxe-escalation"
-    elif state == "RESPONDING":
-        img_path = ASSET_IDLE
-        css_class = "maxe-responding"
-    else:
-        img_path = ASSET_IDLE
-        css_class = "maxe-idle"
+MAXE_IMG_WIDTH = 260  # small card size
 
-    uri = img_to_data_uri(img_path)
-    st.markdown(
-        f"""
-        <div class="maxe-container">
-          <img class="maxe-img {css_class}" src="{uri}" />
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+def render_maxe(image_placeholder, state: str, frame: str = "A") -> None:
+    if state == "THINKING":
+        path = ASSET_THINKING_A if frame == "A" else ASSET_THINKING_B
+    elif state == "ESCALATION":
+        path = ASSET_ESCALATION
+    else:
+        path = ASSET_IDLE
+
+    image_placeholder.image(path, width=MAXE_IMG_WIDTH)
 
 
 # ----------------------------
