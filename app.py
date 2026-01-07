@@ -156,6 +156,19 @@ def maxe_escalation_reply() -> str:
 # ----------------------------
 # Page + CSS animation
 # ----------------------------
+MAXE_IMG_WIDTH = 260  # small card size (try 240–300)
+
+def render_maxe_animated(state: str) -> None:
+    """Renders exactly ONE MAXE image at a fixed size."""
+    if state == "THINKING":
+        path = ASSET_THINKING_A  # keep simple for now
+    elif state == "ESCALATION":
+        path = ASSET_ESCALATION
+    else:
+        path = ASSET_IDLE
+
+    st.image(path, width=MAXE_IMG_WIDTH)
+
 st.set_page_config(page_title="MAXE", layout="wide")
 
 st.markdown("""
@@ -217,18 +230,6 @@ def img_to_data_uri(path: str) -> str:
     b64 = base64.b64encode(data).decode("utf-8")
     return f"data:image/png;base64,{b64}"
 
-
-MAXE_IMG_WIDTH = 260  # small card size
-
-def render_maxe(image_placeholder, state: str, frame: str = "A") -> None:
-    if state == "THINKING":
-        path = ASSET_THINKING_A if frame == "A" else ASSET_THINKING_B
-    elif state == "ESCALATION":
-        path = ASSET_ESCALATION
-    else:
-        path = ASSET_IDLE
-
-    image_placeholder.image(path, width=MAXE_IMG_WIDTH)
 
 
 # ----------------------------
@@ -321,8 +322,9 @@ with right:
 # Render MAXE ONCE per run
 # ----------------------------
 with left:
-    status_slot.caption(f"Status: {st.session_state.maxe_state}")
-    with maxe_slot.container():
-        render_maxe_animated(st.session_state.maxe_state)
+    st.markdown("## MAXE")
+    st.caption(f"Status: {st.session_state.maxe_state}")
+    render_maxe_animated(st.session_state.maxe_state)
+
 
 
