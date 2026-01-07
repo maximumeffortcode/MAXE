@@ -124,28 +124,56 @@ def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
     return (len(reasons) > 0, reasons)
 
 
-# ----------------------------
-# Typewriter reply
-# ----------------------------####################################################################################################################
+# Typewriter 
 
 
-def typewriter_in_chat(chat_placeholder, text: str, speed: float = 0.02, pre_delay: float = 0.35) -> None:
-    
-    if text is None:
-        text = ""
-    text = str(text)
+def typewriter_in_chat(
+    chat_placeholder,
+    text: str,
+    speed: float = 0.02,
+    pre_delay: float = 0.25,
+    on_error_state: str = "IDLE",
+) -> None:
+    """
+    Types text inside a chat message bubble using a placeholder (updates in place).
 
-    with chat_placeholder:
-        with st.chat_message("assistant"):
-            bubble = st.empty()
-            bubble.markdown("…")
-            time.sleep(pre_delay)
+    HARDENED:
+    - Prevents NameError / NoneType issues
+    - Catches runtime errors so the app won't crash
+    - Resets MAXE state on failure so MAXE won't "vanish" due to an exception
+    """
 
-            typed = ""
-            for ch in text:
-                typed += ch
-                bubble.markdown(typed)
-                time.sleep(speed)
+    try:
+        # Ensure text is always a string
+        if text is None:
+            text = ""
+        text = str(text)
+
+        with chat_placeholder:
+            with st.chat_message("assistant"):
+                bubble = st.empty()
+                bubble.markdown("…")
+                time.sleep(pre_delay)
+
+                typed = ""
+                for ch in text:
+                    typed += ch
+                    bubble.markdown(typed)
+                    time.sleep(speed)
+
+    except Exception as e:
+        # Never let an exception kill the app mid-render
+        try:
+            st.session_state.maxe_state = on_error_state
+        except Exception:
+            pass
+
+        # Show a safe fallback message in chat instead of crashing
+        with chat_placeholder:
+            with st.chat_message("assistant"):
+                st.error("MAXE hit a hiccup while responding. Please try again.")
+                st.caption(f"Error: {e}")
+
 
 # ----------------------------
 # Placeholder MAXE replies (swap later with AI / rules)
@@ -183,7 +211,7 @@ st.markdown("""
 
 .maxe-img{
   width:100%;
-  max-width:420px;
+  max-width:260px;
   border-radius: 10px;
 }
 
@@ -279,7 +307,7 @@ if "pending_user_msg" not in st.session_state:
 # ----------------------------
 # Layout
 # ----------------------------
-left, right = st.columns([1, 2], gap="large")
+left, right = st.columns([0.9, 2.1], gap="large")
 
 with left:
     st.markdown("## MAXE")
