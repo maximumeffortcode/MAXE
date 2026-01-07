@@ -1,8 +1,8 @@
-# app.py — MAXE Hero + Avatar Chat (Streamlit Cloud)
-# - Big MAXE "hero" at top that reflects state: IDLE / THINKING (A<->B) / ESCALATION
-# - Small MAXE avatar beside assistant text in chat
-# - Thinking animation swaps A<->B in-place (single placeholders, no duplicates)
-# - Escalation triggers + email-only coach notification (best effort)
+# app.py — MAXE Hero + MAXE Avatar Chat (Streamlit Cloud)
+# ✅ Big centered MAXE "hero" at top (IDLE / THINKING A<->B / ESCALATION)
+# ✅ Assistant chat avatar replaced with MAXE (no orange robot icon)
+# ✅ Thinking animation updates in-place (no duplicate images, no vanish)
+# ✅ Escalation triggers + email-only coach notification (best effort)
 #
 # Folder:
 #   app.py
@@ -16,11 +16,13 @@
 import os
 import re
 import time
+import base64
 import smtplib
 from email.message import EmailMessage
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 import streamlit as st
+
 
 # ----------------------------
 # ASSETS
@@ -30,13 +32,15 @@ ASSET_THINKING_A = "maxe_assets/maxe_thinking_a.png"
 ASSET_THINKING_B = "maxe_assets/maxe_thinking_b.png"
 ASSET_ESCALATION = "maxe_assets/maxe_escalation.png"
 
-# Sizes
-HERO_WIDTH = 340        # top image size (try 260–420)
-AVATAR_SIZE = 56        # chat avatar size (try 44–72)
-
-# Thinking animation
+# UI sizing
+HERO_WIDTH_PX = 340      # try 280–420
 THINK_SECONDS = 0.9
 THINK_INTERVAL = 0.25
+
+# If you want the “typed” effect, set True (can feel janky on Streamlit Cloud)
+ENABLE_TYPEWRITER = False
+TYPE_SPEED = 0.01
+
 
 # ----------------------------
 # SECRETS / ENV helper
@@ -46,17 +50,20 @@ def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
         return str(st.secrets[key])
     return os.getenv(key, default)
 
-#CSS
-st.markdown("""
+
+# ----------------------------
+# CSS (hero glow)
+# ----------------------------
+st.markdown(
+    """
 <style>
 .maxe-hero {
     border-radius: 16px;
-    transition: box-shadow 0.4s ease, transform 0.4s ease;
+    transition: box-shadow 0.25s ease, transform 0.25s ease;
+    display: block;
 }
 
-.maxe-idle {
-    box-shadow: 0 0 0 rgba(0,0,0,0);
-}
+.maxe-idle { box-shadow: none; }
 
 .maxe-thinking {
     box-shadow:
@@ -66,11 +73,16 @@ st.markdown("""
 
 .maxe-escalation {
     box-shadow:
-        0 0 25px rgba(255, 60, 60, 0.5),
-        0 0 70px rgba(255, 60, 60, 0.4);
+        0 0 25px rgba(255, 60, 60, 0.55),
+        0 0 70px rgba(255, 60, 60, 0.35);
 }
+
+/* Center the app a bit tighter */
+.block-container { padding-top: 2rem; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ----------------------------
@@ -106,13 +118,14 @@ def send_coach_email(subject: str, body: str, reasons: List[str]) -> None:
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
 
+
 # ----------------------------
 # ESCALATION CHECK (MVP)
 # ----------------------------
 def _contains_any(text: str, patterns: List[str]) -> bool:
     return any(re.search(p, text, flags=re.IGNORECASE) for p in patterns)
 
-def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
+def check_escalation(user_msg: str) -> Tuple[bool, List[str]]:
     t = user_msg.strip()
     reasons: List[str] = []
 
@@ -151,8 +164,9 @@ def check_escalation(user_msg: str) -> tuple[bool, List[str]]:
 
     return (len(reasons) > 0, reasons)
 
+
 # ----------------------------
-# Reply stubs (replace later)
+# Replies (stubs for now)
 # ----------------------------
 def maxe_reply_for(user_msg: str) -> str:
     return (
@@ -171,9 +185,17 @@ def maxe_escalation_reply() -> str:
         "If you have chest pain, fainting, or severe shortness of breath, seek urgent medical care."
     )
 
+
 # ----------------------------
-# Rendering helpers
+# Image helpers (base64 to prevent broken <img src="localpath">)
 # ----------------------------
+@st.cache_data(show_spinner=False)
+def img_to_data_uri(path: str) -> str:
+    with open(path, "rb") as f:
+        data = f.read()
+    b64 = base64.b64encode(data).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
 def hero_path_for_state(state: str, frame: str = "A") -> str:
     if state == "ESCALATION":
         return ASSET_ESCALATION
@@ -181,106 +203,102 @@ def hero_path_for_state(state: str, frame: str = "A") -> str:
         return ASSET_THINKING_A if frame == "A" else ASSET_THINKING_B
     return ASSET_IDLE
 
-def avatar_path_for_state(state: str, frame: str = "A") -> str:
-    # same as hero (kept separate in case you later want different crops)
-    return hero_path_for_state(state, frame)
-
-def render_hero(image_path: str, state: str):
-    cls = {
+def css_class_for_state(state: str) -> str:
+    return {
         "IDLE": "maxe-idle",
         "THINKING": "maxe-thinking",
-        "ESCALATION": "maxe-escalation"
+        "ESCALATION": "maxe-escalation",
     }.get(state, "maxe-idle")
 
-    st.markdown(
+def render_hero(slot, state: str, frame: str = "A", width_px: int = HERO_WIDTH_PX) -> None:
+    asset_path = hero_path_for_state(state, frame=frame)
+    data_uri = img_to_data_uri(asset_path)
+    cls = css_class_for_state(state)
+
+    slot.markdown(
         f"""
         <div style="display:flex; justify-content:center;">
-            <img src="{image_path}" class="maxe-hero {cls}" width="320"/>
+            <img src="{data_uri}" class="maxe-hero {cls}" width="{width_px}" />
         </div>
         """,
         unsafe_allow_html=True
     )
 
-
-def avatar_row(avatar_path: str, content_md: str, placeholder=None):
-    def _render():
-        col_img, col_text = st.columns([0.12, 0.88], vertical_alignment="top")
-        with col_img:
-            st.image(avatar_path, width=56)
-        with col_text:
-            st.markdown(content_md)
-
-    if placeholder:
-        with placeholder:
-            _render()
-    else:
-        _render()
+def assistant_avatar_data_uri(state: str = "IDLE", frame: str = "A") -> str:
+    # Use the same art as the hero for the avatar
+    return img_to_data_uri(hero_path_for_state(state, frame=frame))
 
 
-def animate_thinking(hero_placeholder, bubble_placeholder) -> None:
+# ----------------------------
+# “Thinking” animation (in-place)
+# ----------------------------
+def animate_thinking(hero_slot, status_slot, bubble_slot) -> None:
     end = time.time() + THINK_SECONDS
     frame = "A"
     while time.time() < end:
-        # Update hero
-        render_hero(hero_placeholder, "THINKING", frame=frame)
-        # Update current assistant bubble ("…")
-        avatar_row(avatar_path_for_state("THINKING", frame), "…", placeholder=bubble_placeholder)
+        status_slot.caption("Status: THINKING")
+        render_hero(hero_slot, "THINKING", frame=frame)
+
+        # Keep the assistant bubble showing activity
+        bubble_slot.markdown("…")
 
         frame = "B" if frame == "A" else "A"
         time.sleep(THINK_INTERVAL)
+
+
+def typewriter(bubble_slot, text: str) -> None:
+    if not ENABLE_TYPEWRITER:
+        bubble_slot.markdown(text)
+        return
+
+    typed = ""
+    for ch in text:
+        typed += ch
+        bubble_slot.markdown(typed)
+        time.sleep(TYPE_SPEED)
+
 
 # ----------------------------
 # Streamlit App
 # ----------------------------
 st.set_page_config(page_title="MAXE", layout="centered")
 
-# Session init
 if "messages" not in st.session_state:
     st.session_state.messages: List[Dict[str, Any]] = []
 if "hero_state" not in st.session_state:
     st.session_state.hero_state = "IDLE"
 
-# Top HERO area (single placeholder; never duplicate)
-st.title("MAXE")
 
-# Centered hero using columns
+# Title
+st.markdown("<h1 style='text-align:center; margin-bottom: 0.5rem;'>MAXE</h1>", unsafe_allow_html=True)
+
+# Hero (single stable placeholders)
 hero_left, hero_center, hero_right = st.columns([1, 2, 1])
-
 with hero_center:
     hero_slot = st.empty()
-    status_slot = st.caption(f"Status: {st.session_state.hero_state}")
-    render_hero(hero_slot, st.session_state.hero_state)
+    status_slot = st.empty()
+
+    status_slot.caption(f"Status: {st.session_state.hero_state}")
+    render_hero(hero_slot, st.session_state.hero_state, frame="A")
+
+st.divider()
 
 
-# Render history
-def avatar_row(avatar_path: str, content_md: str, placeholder=None):
-    def _render():
-        col_img, col_text = st.columns([0.12, 0.88], vertical_alignment="top")
-        with col_img:
-            st.image(avatar_path, width=56)
-        with col_text:
-            st.markdown(content_md)
-
-    if placeholder:
-        with placeholder:
-            _render()
-    else:
-        _render()
-
+# Chat history (assistant uses MAXE avatar)
 for m in st.session_state.messages:
     if m["role"] == "user":
         with st.chat_message("user"):
             st.markdown(m["content"])
     else:
-        with st.chat_message("assistant"):
-            avatar_row(ASSET_IDLE, reply)
+        with st.chat_message("assistant", avatar=assistant_avatar_data_uri("IDLE")):
+            st.markdown(m["content"])
 
 
 # Input
 user_msg = st.chat_input("Message MAXE…")
 
 if user_msg:
-    # Show user message immediately
+    # User message
     st.session_state.messages.append({"role": "user", "content": user_msg})
     with st.chat_message("user"):
         st.markdown(user_msg)
@@ -288,20 +306,20 @@ if user_msg:
     escalate, reasons = check_escalation(user_msg)
 
     if escalate:
-        # Set hero escalation immediately
+        # Escalation state
         st.session_state.hero_state = "ESCALATION"
         status_slot.caption("Status: ESCALATION")
-        render_hero(hero_slot, "ESCALATION")
+        render_hero(hero_slot, "ESCALATION", frame="A")
 
-        # Bubble escalation
         reply = maxe_escalation_reply()
-        with st.chat_message("assistant"):
-            avatar_row(ASSET_ESCALATION, reply)
 
-        # Save message
+        with st.chat_message("assistant", avatar=assistant_avatar_data_uri("ESCALATION")):
+            bubble_slot = st.empty()
+            typewriter(bubble_slot, reply)
+
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
-        # Notify coach (best effort)
+        # Email coach (best effort)
         try:
             send_coach_email(
                 subject="MAXE Escalation Alert",
@@ -312,28 +330,23 @@ if user_msg:
             st.warning(f"Coach email not sent (check Streamlit secrets): {e}")
 
     else:
-        # Thinking phase: animate in-place (hero + current bubble placeholder)
+        # Thinking state + animation (no duplicates / no vanish)
         st.session_state.hero_state = "THINKING"
         status_slot.caption("Status: THINKING")
         render_hero(hero_slot, "THINKING", frame="A")
 
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=assistant_avatar_data_uri("THINKING", frame="A")):
             bubble_slot = st.empty()
-            animate_thinking(hero_slot, bubble_slot)
+            animate_thinking(hero_slot, status_slot, bubble_slot)
 
-            # Final reply (stable)
-            reply = maxe_reply_for(user_msg)
+            # Return to IDLE and respond
             st.session_state.hero_state = "IDLE"
             status_slot.caption("Status: IDLE")
-            render_hero(hero_slot, "IDLE")
+            render_hero(hero_slot, "IDLE", frame="A")
 
-            avatar_row(ASSET_IDLE, reply, placeholder=bubble_slot)
+            reply = maxe_reply_for(user_msg)
+            typewriter(bubble_slot, reply)
 
-        # Save message
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
     st.rerun()
-
-
-
-
